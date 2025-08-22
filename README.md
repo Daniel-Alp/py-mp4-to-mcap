@@ -1,7 +1,7 @@
 # py-mp4-to-mcap
 convert MP4s with H264 or H265 video encoding to MCAP.
 
-install ffmpeg
+install ffmpeg </br>
 on MacOS
 ```
 brew install pkg-config ffmpeg
