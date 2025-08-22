@@ -1,7 +1,7 @@
 import av
 from av.packet import Packet
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 class CodecType(Enum):
@@ -24,20 +24,13 @@ class CodecType(Enum):
             case CodecType.H265:
                 return "libx265"
             
-    def should_skip_nal(self, nal: int) -> str:
+    def should_skip_nal(self, nal: int) -> bool:
         match self:
             case CodecType.H264:
-                H264_NAL_SPS = 0x7
-                H264_NAL_PPS = 0x8
-                H264_NAL_SEI = 0x6
-                return nal == H264_NAL_SPS or nal == H264_NAL_PPS or nal == H264_NAL_SEI
-            case CodecType.H265:           
-                H265_NAL_VPS = 32
-                H265_NAL_SPS = 33
-                H265_NAL_PPS = 34
-                H265_NAL_SEI = 39   
-                return nal == H265_NAL_VPS or nal == H265_NAL_SPS or nal == H265_NAL_PPS or nal == H265_NAL_SEI
-
+                return nal in {6, 7, 8} # SPS, PPS, SEI
+            case CodecType.H265:             
+                return nal in {32, 33, 34, 39} # VPS, SPS, PPS, SEI
+            
 @dataclass
 class ParameterSets:
     AVCC_HEADER_SIZE = 5
@@ -53,7 +46,7 @@ class ParameterSets:
             case CodecType.H264:
                 return cls.parse_avcc(extradata)
             case CodecType.H265:
-                raise NotImplementedError("TODO: support H265")
+                raise NotImplementedError("todo: support H265")
 
     @classmethod
     def parse_avcc(cls, extradata: bytearray):
@@ -97,20 +90,18 @@ class ParameterSets:
         
         return cls(vps = bytearray(), sps = sps_nals, pps = pps_nals)
     
-    def write_to(self, codec: CodecType, buffer: bytearray):
-        if codec == CodecType.H265:
-            buffer.extend(self.vps)
+    def to_bytes(self) -> bytearray:
+        buffer = bytearray()
+        buffer.extend(self.vps) # empty bytearray if h264
         buffer.extend(self.sps)
-        buffer.extend(self.pps)  
+        buffer.extend(self.pps)
+        return buffer
 
 def convert_to_annex_b(data: bytearray, codec: CodecType) -> bytearray:
     converted = bytearray()
     pos = 0
-    while pos < len(data):
-        if pos + 4 > len(data):
-            break
+    while pos + 4 <= len(data):
         nal_size = int.from_bytes(data[pos:pos+4], byteorder='big')
-
         nal_type = 0 
         if pos + 4 < len(data):
             match codec:
@@ -118,19 +109,12 @@ def convert_to_annex_b(data: bytearray, codec: CodecType) -> bytearray:
                     nal_type = data[pos+4] & 0x1F
                 case CodecType.H265:
                     nal_type = (data[pos+4] >> 1) & 0x3F
-        
         pos += 4
-
         if not codec.should_skip_nal(nal_type):
             converted.extend([0, 0, 0, 1])
             if pos + nal_size <= len(data):
                 converted.extend(data[pos:pos+nal_size])
-        
-        if pos + nal_size <= len(data):
-            pos += nal_size
-        else:
-            break
-
+        pos += nal_size
     return converted
 
 class VideoConverter:
@@ -167,24 +151,15 @@ class VideoConverter:
         return self.decoder.decode(None)
     
     def process_packet(self, packet: Packet, is_first: bool):
-        data = bytes(packet)
-
         if packet.pts != packet.dts:
             raise ValueError(
                 f"This video contains B-frames or reordered frames (PTS={packet.pts}, DTS={packet.dts}). "
                 f"Please re-encode the video without B-frames using: "
-                f"ffmpeg -i <input> -c:v {self.codec_type.value} -bf 0 output.mp4"
+                f"ffmpeg -i {self.input_path} -c:v {self.codec_type.value} -bf 0 output.mp4"
             )
-        
-        if is_first or packet.is_keyframe:
-            frame_data = bytearray()
-            self.parameter_sets.write_to(self.codec_type, frame_data)
-            converted = convert_to_annex_b(data, self.codec_type)
-            frame_data.extend(converted)
-            self.frame_packets.append(frame_data)
-        else:
-            converted = convert_to_annex_b(data, self.codec_type)
-            self.frame_packets.append(converted)
+        converted = self.parameter_sets.to_bytes() if is_first or packet.is_keyframe else bytearray()
+        converted.extend(convert_to_annex_b(bytearray(packet), self.codec_type))
+        self.frame_packets.append(converted)
 
     def get_timestamp(self, pts: int) -> int:
         if self.time_base_den == 0:
