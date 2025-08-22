@@ -50,15 +50,15 @@ def mp4_to_mcap(input_path: Path, output_path: Path, topic: str, frame_id: str):
                 data = b''.join(bytes(p) for p in frame_packets)
                 timestamp_ns = int(current_timestamp * 1_000_000_000 * packet.time_base.numerator / packet.time_base.denominator)
                 message = CompressedVideo(
-                    timestamp=Timestamp(seconds=timestamp_ns // 1_000_000_000, nanos=timestamp_ns % 1_000_000_000),
-                    data=data,
-                    format=format
+                    timestamp   = Timestamp(seconds=timestamp_ns // 1_000_000_000, nanos=timestamp_ns % 1_000_000_000),
+                    data        = data,
+                    format      = format
                 )
                 writer.write_message(
-                    topic=topic,
-                    message=message,
-                    publish_time=timestamp_ns,
-                    log_time=timestamp_ns
+                    topic        = topic,
+                    message      = message,
+                    publish_time = timestamp_ns,
+                    log_time     = timestamp_ns
                 )
                 frame_packets = [packet]
                 current_timestamp = packet_timestamp
