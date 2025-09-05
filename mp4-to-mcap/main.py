@@ -31,7 +31,6 @@ def mp4_to_mcap(input_path: Path, output_path: Path, topic: str, frame_id: str):
         
         with av.open(temp_output_path, "r") as container, open(output_path, "wb") as stream, Writer(stream) as writer:
             video_stream = container.streams.video[0]
-            codec_context = video_stream.codec_context
 
             format = "h264" if codec_name == "h264" else "h265"
 
