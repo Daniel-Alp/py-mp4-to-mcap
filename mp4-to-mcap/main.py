@@ -15,45 +15,43 @@ def mp4_to_mcap(input_path: Path, output_path: Path, topic: str, frame_id: str):
         if codec_name not in ["h264", "h265", "hevc"]:
             raise ValueError(f"Unsupported codec: {codec_name}")
     
-    with NamedTemporaryFile(suffix=".ts", delete=False) as temp_output:
+    with NamedTemporaryFile(suffix=".ts") as temp_output:
         temp_output_path = Path(temp_output.name)
-    
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", str(input_path),
-        "-c:v", "libx264" if codec_name == "h264" else "libx265",
-        "-bf", "0",
-        "-bsf:v", "h264_mp4toannexb" if codec_name == "h264" else "hevc_mp4toannexb",
-        str(temp_output_path)
-    ]
-    subprocess.run(cmd, check=True)
+        
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", str(input_path),
+            "-c:v", "libx264" if codec_name == "h264" else "libx265",
+            "-bf", "0",
+            "-bsf:v", "h264_mp4toannexb" if codec_name == "h264" else "hevc_mp4toannexb",
+            str(temp_output_path)
+        ]
+        subprocess.run(cmd, check=True)
+        
+        with av.open(temp_output_path, "r") as container, open(output_path, "wb") as stream, Writer(stream) as writer:
+            video_stream = container.streams.video[0]
+            codec_context = video_stream.codec_context
 
-    with av.open(temp_output_path, "r") as container, open(output_path, "wb") as stream, Writer(stream) as writer:
-        video_stream = container.streams.video[0]
-        codec_context = video_stream.codec_context
+            format = "h264" if codec_name == "h264" else "h265"
 
-        format = "h264" if codec_name == "h264" else "h265"
-
-        for packet in container.demux(video_stream):
-            if packet.pts is None:
-                continue
-            data = bytes(packet)
-            # assumes that 1 packet corresponds to 1 frame https://ffmpeg.org/doxygen/2.0/structAVPacket.html
-            timestamp_ns = int(packet.pts * 1_000_000_000 * packet.time_base.numerator / packet.time_base.denominator)
-            message = CompressedVideo(
-                timestamp   = Timestamp(seconds=timestamp_ns // 1_000_000_000, nanos=timestamp_ns % 1_000_000_000),
-                data        = data,
-                format      = format
-            )
-            writer.write_message(
-                topic        = topic,
-                message      = message,
-                publish_time = timestamp_ns,
-                log_time     = timestamp_ns
-            )
-
-    temp_output_path.unlink()
+            for packet in container.demux(video_stream):
+                if packet.pts is None:
+                    continue
+                data = bytes(packet)
+                # assumes that 1 packet corresponds to 1 frame https://ffmpeg.org/doxygen/2.0/structAVPacket.html
+                timestamp_ns = int(packet.pts * 1_000_000_000 * packet.time_base.numerator / packet.time_base.denominator)
+                message = CompressedVideo(
+                    timestamp   = Timestamp(seconds=timestamp_ns // 1_000_000_000, nanos=timestamp_ns % 1_000_000_000),
+                    data        = data,
+                    format      = format
+                )
+                writer.write_message(
+                    topic        = topic,
+                    message      = message,
+                    publish_time = timestamp_ns,
+                    log_time     = timestamp_ns
+                )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Converts MP4 videos to MCAP")
