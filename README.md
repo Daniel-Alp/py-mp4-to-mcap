@@ -1,4 +1,5 @@
 # py-mp4-to-mcap
+props to FFMPEG
 convert MP4s with H264 or H265 video encoding to MCAP.
 
 install ffmpeg </br>
