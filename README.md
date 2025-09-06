@@ -23,7 +23,7 @@ sudo apt-get install -qq --no-install-recommends \
 ```
 clone the repository, install dependencies
 ```
-git clone https://github.com/Daniel-Alp/py-mp4-to-mcap/tree/main
+git clone https://github.com/Daniel-Alp/py-mp4-to-mcap
 cd py-mp4-to-mcap
 python3 -m pip install -r requirements.txt
 ```
